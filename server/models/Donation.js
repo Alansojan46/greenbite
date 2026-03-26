@@ -48,6 +48,7 @@ const donationSchema = new mongoose.Schema(
             servings: { type: Number, default: null },
             units: { type: Number, default: null },
             kg: { type: Number, default: null },
+            location: { type: locationSchema, required: false },
             claimedAt: { type: Date, default: Date.now },
           },
           { _id: false }

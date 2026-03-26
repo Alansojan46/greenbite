@@ -80,6 +80,12 @@ export const Layout = ({ children }) => {
                 >
                   AI Insights
                 </Link>
+                <Link
+                  to="/dashboard/analytics"
+                  className="text-slate-600 hover:text-primary-600 dark:text-slate-300 dark:hover:text-primary-400"
+                >
+                  Analytics
+                </Link>
               </>
             ) : (
               <Link

@@ -13,6 +13,7 @@ export const DonationCard = ({ donation, onClaim, canClaim, onViewDetails }) => 
     spoilageRisk,
     status,
     donorId,
+    distanceKm,
   } = donation;
 
   const servingsTotal = estimatedPeopleServed != null ? Number(estimatedPeopleServed) : 0;
@@ -72,6 +73,11 @@ export const DonationCard = ({ donation, onClaim, canClaim, onViewDetails }) => 
       </div>
 
       <div className="flex flex-wrap gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+        {distanceKm != null && Number.isFinite(Number(distanceKm)) && (
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 dark:bg-slate-800">
+            Distance: <span className="font-semibold">{Number(distanceKm).toFixed(2)} km</span>
+          </span>
+        )}
         {quantityKg && (
           <span className="rounded-full bg-slate-100 px-2 py-0.5 dark:bg-slate-800">
             {quantityKg} kg

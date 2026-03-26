@@ -55,17 +55,22 @@ const pickHfToken = () =>
 const pickHfModel = () =>
   process.env.HF_VISION_MODEL_ID ||
   process.env.HF_MODEL_ID ||
-  // Indian-food specialized model (15 classes including biryani/dosa/naan/paneer/etc.)
-  "therealcyberlord/vit-indian-food";
+  // Food-101 classifier (strong baseline; >80% top-1 on Food-101 is typical for modern models)
+  "VinnyVortex004/Food101-Classifier";
 
 const pickHfFallbackModel = () =>
   process.env.HF_FALLBACK_VISION_MODEL_ID ||
-  // General food classifier (Food101). Used only when primary confidence is low.
-  "VinnyVortex004/Food101-Classifier";
+  // Indian-food specialized model (15 classes including biryani/dosa/naan/paneer/etc.)
+  "nateraw/food";
+
+const isZeroShotEnabled = () => {
+  const v = String(process.env.HF_ENABLE_ZERO_SHOT || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+};
 
 const pickMinConfidence = () => {
-  const v = Number(process.env.HF_MIN_CONFIDENCE || 55);
-  if (!Number.isFinite(v)) return 55;
+  const v = Number(process.env.HF_MIN_CONFIDENCE || 30);
+  if (!Number.isFinite(v)) return 30;
   return Math.max(0, Math.min(100, v));
 };
 
@@ -928,7 +933,14 @@ Return ONLY strict JSON:
   };
 };
 
-export const deriveFoodAiReport = async ({ file, preparedAt, attempt, avoidLabels }) => {
+export const deriveFoodAiReport = async ({
+  file,
+  preparedAt,
+  attempt,
+  avoidLabels,
+  labelOverrides,
+  labelOverrideMeta,
+}) => {
   const provider = pickFoodAnalysisProvider();
   const token = pickHfToken();
   const openaiOk = isOpenAiVisionConfigured();
@@ -1039,7 +1051,7 @@ export const deriveFoodAiReport = async ({ file, preparedAt, attempt, avoidLabel
     const zeroShotMin = pickZeroShotMinConfidence();
 
     let visionZero = null;
-    if (isLikelyClipModel(zeroShotModelId) && zeroShotLabels.length > 0) {
+    if (isZeroShotEnabled() && isLikelyClipModel(zeroShotModelId) && zeroShotLabels.length > 0) {
       try {
         const r = await analyzeFoodImageZeroShotClip({
           imageBuffer: file.buffer,
@@ -1067,13 +1079,17 @@ export const deriveFoodAiReport = async ({ file, preparedAt, attempt, avoidLabel
       });
     } catch (err) {
       lastProviderError = err?.message ? String(err.message) : String(err || "");
+      console.log("HF ERROR:", err?.response?.data || err.message);
+      console.log("Status:", err?.response?.status);
+      console.log("Data:", err?.response?.data);
+      console.log("Message:", err.message);
       throw err;
     }
 
     vision = visionPrimary;
     used = "primary";
 
-    if (visionZero && visionZero.aiConfidence >= vision.aiConfidence) {
+    if (visionZero && visionZero.aiConfidence >= visionPrimary.aiConfidence) {
       vision = visionZero;
       used = "zero_shot";
     }
@@ -1117,7 +1133,44 @@ export const deriveFoodAiReport = async ({ file, preparedAt, attempt, avoidLabel
       .map((x) => x.toLowerCase())
   );
 
-  let foodType = canonicalizeFoodType(vision.rawLabel);
+  const foodTypeModel = canonicalizeFoodType(vision.rawLabel);
+  let foodType = foodTypeModel;
+  let wasCorrected = false;
+  let confidenceSource = "model";
+  let correctionEvidenceCount = 0;
+
+  const overrides = labelOverrides && typeof labelOverrides === "object" ? labelOverrides : null;
+  const overrideMeta = labelOverrideMeta && typeof labelOverrideMeta === "object" ? labelOverrideMeta : null;
+
+  if (overrides) {
+    const rawKey = String(vision?.rawLabel || "").trim().toLowerCase();
+    const overridden = rawKey ? String(overrides[rawKey] || "").trim() : "";
+    const overriddenCanon = overridden ? canonicalizeFoodType(overridden) : "";
+    if (overriddenCanon) {
+      const evidenceCount = Math.max(1, Number(overrideMeta?.[rawKey]?.count || 1));
+      correctionEvidenceCount = evidenceCount;
+
+      // If we have a known correction for this raw label, treat the result as feedback-backed
+      // even if the model already happens to output the same label.
+      wasCorrected = true;
+      confidenceSource = "feedback_mapping";
+
+      if (overriddenCanon.toLowerCase() !== String(foodTypeModel || "").toLowerCase()) {
+        foodType = overriddenCanon;
+      }
+
+      const list = Array.isArray(vision.candidates) ? vision.candidates : [];
+      const has = list.some(
+        (c) => String(c?.label || "").trim().toLowerCase() === String(overriddenCanon).trim().toLowerCase()
+      );
+      if (!has) {
+        vision.candidates = normalizeCandidates([
+          { label: overriddenCanon, confidence: Math.max(0, Math.min(100, Number(vision.aiConfidence) || 0)) },
+          ...list,
+        ]);
+      }
+    }
+  }
   if (foodType && avoidSet.has(foodType.toLowerCase())) {
     const candidate = (Array.isArray(vision.candidates) ? vision.candidates : [])
       .map((c) => canonicalizeFoodType(c?.label))
@@ -1132,6 +1185,21 @@ export const deriveFoodAiReport = async ({ file, preparedAt, attempt, avoidLabel
     candidates: vision.candidates,
     agreement,
   });
+
+  const clampInt = (n, min, max) => Math.max(min, Math.min(max, Math.round(Number(n) || 0)));
+  const pickFeedbackConfidence = ({ source, evidenceCount }) => {
+    if (source === "feedback_mapping") {
+      const c = Math.max(1, Number(evidenceCount) || 1);
+      return clampInt(80 + Math.min(15, (c - 1) * 5), 80, 95);
+    }
+    return null;
+  };
+
+  const aiConfidenceModel = calibratedConfidence;
+  const aiConfidenceEffective =
+    confidenceSource === "feedback_mapping"
+      ? pickFeedbackConfidence({ source: confidenceSource, evidenceCount: correctionEvidenceCount }) ?? aiConfidenceModel
+      : aiConfidenceModel;
   const estimatedServings = estimateServingsHeuristic({
     canonicalFoodType: foodType,
     imageBytes: file.size,
@@ -1150,7 +1218,11 @@ export const deriveFoodAiReport = async ({ file, preparedAt, attempt, avoidLabel
     foodType,
     estimatedServings,
     freshnessRisk: freshness.freshnessRisk,
-    aiConfidence: calibratedConfidence,
+    aiConfidence: aiConfidenceEffective,
+    aiConfidenceModel,
+    foodTypeModel,
+    wasCorrected,
+    confidenceSource,
     urgencyLevel,
     analyzedAt: new Date().toISOString(),
     model: {

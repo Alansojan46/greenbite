@@ -37,6 +37,12 @@ const foodAnalysisSchema = new mongoose.Schema(
 
     // Human-in-the-loop improvement signal (for later fine-tuning)
     userOverrideFoodType: { type: String, default: "" },
+    isPredictionCorrect: { type: Boolean, required: false },
+    userCorrectedFoodTypeRaw: { type: String, default: "" },
+    userCorrectedFoodType: { type: String, default: "" },
+    feedbackSource: { type: String, default: "" }, // "topk" | "custom"
+    originalPredictedFoodType: { type: String, default: "" },
+    originalAiConfidence: { type: Number, default: 0, min: 0, max: 100 },
     userFeedbackAt: { type: Date, required: false },
   },
   { timestamps: true }

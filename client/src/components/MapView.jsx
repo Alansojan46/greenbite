@@ -267,6 +267,10 @@ const MapViewGoogle = ({
   ngoLocation,
   heatmapPoints,
   markers = [],
+  pickable = false,
+  pickedLocation = null,
+  onPickLocation,
+  pickedLabel = "Selected",
   center: centerProp,
   zoom = 12,
   height = "400px",
@@ -376,10 +380,26 @@ const MapViewGoogle = ({
           center={center}
           zoom={zoom}
           onLoad={onLoad}
+          onClick={(e) => {
+            if (!pickable) return;
+            const lat = e?.latLng?.lat?.();
+            const lng = e?.latLng?.lng?.();
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            const loc = { lat, lng };
+            setCenterOverride(loc);
+            if (mapInstance && typeof mapInstance.panTo === "function") mapInstance.panTo(loc);
+            onPickLocation?.(loc);
+          }}
           options={{ disableDefaultUI: true, zoomControl: true }}
         >
           {userLocation && (
             <Marker position={userLocation} label={{ text: "You", color: "#0f172a", fontSize: "11px" }} />
+          )}
+          {pickedLocation && (
+            <Marker
+              position={pickedLocation}
+              label={{ text: pickedLabel, color: "#0f172a", fontSize: "11px" }}
+            />
           )}
           {donorLocation && (
             <Marker position={donorLocation} label={{ text: "Donor", color: "#16a34a", fontSize: "11px" }} />
@@ -419,4 +439,3 @@ export const MapView = (props) => {
   if (!enableGoogle) return <MapViewOsm {...props} />;
   return <MapViewGoogle apiKey={apiKey} {...props} />;
 };
-

@@ -5,7 +5,27 @@ import cloudinary from "../utils/cloudinary.js";
 import { estimateSpoilageRisk } from "../services/spoilageService.js";
 import { calculateImpactScore } from "../services/impactService.js";
 import { notifyDonationClaimed, notifyDonationPosted } from "../services/notificationService.js";
-import User from "../models/User.js";
+
+const parseLatLng = ({ location, lat, lng, flatLat, flatLng }) => {
+  const rawLat = location?.lat ?? lat ?? flatLat;
+  const rawLng = location?.lng ?? lng ?? flatLng;
+  if (rawLat == null || rawLng == null) return null;
+  const parsed = { lat: Number(rawLat), lng: Number(rawLng) };
+  if (!Number.isFinite(parsed.lat) || !Number.isFinite(parsed.lng)) return null;
+  return parsed;
+};
+
+const haversineDistanceKm = (a, b) => {
+  const toRad = (v) => (Number(v) * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const aa =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+  return R * c;
+};
 
 export const createDonation = async (req, res) => {
   const errors = validationResult(req);
@@ -24,11 +44,11 @@ export const createDonation = async (req, res) => {
     foodAnalysisId,
   } = req.body;
 
-  const location = locationBody && locationBody.lat != null && locationBody.lng != null
-    ? { lat: Number(locationBody.lat), lng: Number(locationBody.lng) }
-    : req.body["location.lat"] != null && req.body["location.lng"] != null
-    ? { lat: Number(req.body["location.lat"]), lng: Number(req.body["location.lng"]) }
-    : null;
+  const location = parseLatLng({
+    location: locationBody,
+    flatLat: req.body["location.lat"],
+    flatLng: req.body["location.lng"],
+  });
 
   if (!location || location.lat == null || location.lng == null) {
     return res.status(400).json({ message: "Donor location is required. Please allow location access or enter address." });
@@ -125,7 +145,7 @@ export const createDonation = async (req, res) => {
 
 export const getDonations = async (req, res) => {
   try {
-    const { status, donor } = req.query;
+    const { status, donor, sort, lat, lng } = req.query;
     const filter = {};
     if (status) filter.status = status;
     if (donor === "me") filter.donorId = req.user._id;
@@ -140,8 +160,32 @@ export const getDonations = async (req, res) => {
       query = query.populate("claims.claimerId", "name email role organizationName phone");
     }
 
-    const donations = await query;
-    res.json(donations);
+    const requesterLoc = parseLatLng({ lat, lng });
+    const donations = await query.lean();
+
+    const withDistance = requesterLoc
+      ? donations.map((d) => {
+          const loc = d?.location;
+          const dist =
+            loc && loc.lat != null && loc.lng != null
+              ? haversineDistanceKm(requesterLoc, loc)
+              : null;
+          return { ...d, distanceKm: dist != null ? Number(dist.toFixed(2)) : null };
+        })
+      : donations;
+
+    if (requesterLoc && String(sort || "").toLowerCase() === "nearest") {
+      withDistance.sort((a, b) => {
+        const da = a?.distanceKm;
+        const db = b?.distanceKm;
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return da - db;
+      });
+    }
+
+    res.json(withDistance);
   } catch (err) {
     console.error("Get donations error", err);
     res.status(500).json({ message: "Failed to fetch donations" });
@@ -153,6 +197,22 @@ export const claimDonation = async (req, res) => {
   const userId = req.user._id;
 
   try {
+    const role = String(req.user?.role || "").toLowerCase();
+    if (role !== "ngo" && role !== "regular") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    const claimantLocation = parseLatLng({
+      location: req.body?.location,
+      flatLat: req.body?.["location.lat"],
+      flatLng: req.body?.["location.lng"],
+      lat: req.body?.lat,
+      lng: req.body?.lng,
+    });
+    if (!claimantLocation) {
+      return res.status(400).json({ message: "Location is required to claim a donation." });
+    }
+
     const requestedServings =
       req.body?.servings != null ? Number(req.body.servings) :
       req.body?.quantity != null ? Number(req.body.quantity) :
@@ -227,7 +287,7 @@ export const claimDonation = async (req, res) => {
       update = buildUpdate(
         "remainingPeopleServed",
         amount,
-        { claimerId: userId, servings: amount, claimedAt: now },
+        { claimerId: userId, servings: amount, location: claimantLocation, claimedAt: now },
         amount === remaining
       );
       claim = { servings: amount, remainingServings: remaining - amount };
@@ -246,7 +306,7 @@ export const claimDonation = async (req, res) => {
       update = buildUpdate(
         "remainingUnits",
         amount,
-        { claimerId: userId, units: amount, claimedAt: now },
+        { claimerId: userId, units: amount, location: claimantLocation, claimedAt: now },
         amount === remaining
       );
       claim = { units: amount, remainingUnits: remaining - amount };
@@ -265,7 +325,7 @@ export const claimDonation = async (req, res) => {
       update = buildUpdate(
         "remainingKg",
         amount,
-        { claimerId: userId, kg: amount, claimedAt: now },
+        { claimerId: userId, kg: amount, location: claimantLocation, claimedAt: now },
         amount === remaining
       );
       claim = { kg: amount, remainingKg: Number((remaining - amount).toFixed(2)) };
@@ -300,23 +360,36 @@ export const claimDonation = async (req, res) => {
 
 export const getAiSuggestions = async (req, res) => {
   try {
+    const requesterLoc = parseLatLng({ lat: req.query?.lat, lng: req.query?.lng });
     // Show "insights" even if donations got claimed quickly.
     // Keep completed out since they are no longer actionable.
     const baseFilter = {
       status: { $in: ["available", "claimed"] },
     };
 
-    const topByImpact = await Donation.find(baseFilter)
+    const topByImpact = await Donation.find(baseFilter).lean()
       .sort({ impactScore: -1, createdAt: -1 })
       .limit(10);
 
-    const latest = await Donation.find(baseFilter)
+    const latest = await Donation.find(baseFilter).lean()
       .sort({ createdAt: -1 })
       .limit(10);
 
+    const addDistance = (list) => {
+      if (!requesterLoc) return list;
+      return list.map((d) => {
+        const loc = d?.location;
+        const dist =
+          loc && loc.lat != null && loc.lng != null
+            ? haversineDistanceKm(requesterLoc, loc)
+            : null;
+        return { ...d, distanceKm: dist != null ? Number(dist.toFixed(2)) : null };
+      });
+    };
+
     res.json({
-      topImpactDonations: topByImpact,
-      latestDonations: latest,
+      topImpactDonations: addDistance(topByImpact),
+      latestDonations: addDistance(latest),
     });
   } catch (err) {
     console.error("AI suggestions error", err);

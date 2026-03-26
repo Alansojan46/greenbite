@@ -6,26 +6,55 @@ import { DonationCard } from "../components/DonationCard.jsx";
 import { MapView } from "../components/MapView.jsx";
 import { ClaimSuccessModal } from "../components/ClaimSuccessModal.jsx";
 import { DonationDetailsModal } from "../components/DonationDetailsModal.jsx";
+import { requestBrowserLocation } from "../utils/geolocation.js";
 
 export const DonationFeed = () => {
   const { user } = useAuth();
   const [donations, setDonations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [geoError, setGeoError] = useState("");
+  const [userLocation, setUserLocation] = useState(null);
   const [claimedDonation, setClaimedDonation] = useState(null);
   const [detailsDonation, setDetailsDonation] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const donationIdParam = searchParams.get("donationId");
 
-  const loadDonations = async () => {
+  const role = user?.role?.toLowerCase?.();
+  const canClaim = !!user && (role === "ngo" || role === "regular");
+
+  const loadDonations = async (loc) => {
     setLoading(true);
-    const res = await api.get("/donations");
+    const activeLoc = loc || userLocation;
+    const params = new URLSearchParams();
+    if (activeLoc?.lat != null && activeLoc?.lng != null) {
+      params.set("lat", String(activeLoc.lat));
+      params.set("lng", String(activeLoc.lng));
+      params.set("sort", "nearest");
+    }
+    const res = await api.get(`/donations${params.toString() ? `?${params}` : ""}`);
     setDonations(res.data);
     setLoading(false);
   };
 
   useEffect(() => {
-    loadDonations();
-  }, []);
+    let cancelled = false;
+    (async () => {
+      setGeoError("");
+      if (canClaim) {
+        const loc = await requestBrowserLocation();
+        if (!cancelled && loc) {
+          setUserLocation(loc);
+          await loadDonations(loc);
+          return;
+        }
+      }
+      if (!cancelled) await loadDonations();
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canClaim]);
 
   useEffect(() => {
     if (!donationIdParam) return;
@@ -36,16 +65,20 @@ export const DonationFeed = () => {
 
   const handleClaim = async (id, servings) => {
     try {
-      const res = await api.put(`/donations/${id}/claim`, servings ? { amount: servings } : {});
+      setGeoError("");
+      const loc = await requestBrowserLocation();
+      if (!loc) {
+        setGeoError("Location is required to claim a donation. Please allow location access and try again.");
+        return;
+      }
+      const res = await api.put(`/donations/${id}/claim`, { amount: servings, location: loc });
       setClaimedDonation(res.data);
-      await loadDonations();
+      setUserLocation(loc);
+      await loadDonations(loc);
     } catch {
       await loadDonations();
     }
   };
-
-  const role = user?.role?.toLowerCase?.();
-  const canClaim = !!user && (role === "ngo" || role === "regular");
 
   const mapMarkers = donations
     .filter((d) => d.location && d.location.lat != null && d.location.lng != null)
@@ -69,6 +102,12 @@ export const DonationFeed = () => {
 
       {loading && (
         <p className="text-xs text-slate-500 dark:text-slate-400">Loading donations near you...</p>
+      )}
+
+      {geoError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200">
+          {geoError}
+        </div>
       )}
 
       {!loading && donations.length === 0 && (

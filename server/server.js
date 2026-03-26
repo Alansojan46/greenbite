@@ -1,18 +1,22 @@
+import dotenv from "dotenv";
+
+dotenv.config({
+  path: "../.env"
+});
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
-import dotenv from "dotenv";
 
 import authRoutes from "./routes/authRoutes.js";
 import donationRoutes from "./routes/donationRoutes.js";
 import aiRoutes from "./routes/aiRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
+import analyticsRoutes from "./analytics/analytics.routes.js";
 
 import { connectDB } from "./utils/db.js";
 
 // Load env from project root (one level above /server)
-dotenv.config({ path: "../.env" });
 
 const app = express();
 
@@ -32,6 +36,7 @@ app.use("/api/donations", donationRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/analytics", analyticsRoutes);
 
 // Global error handler
 // eslint-disable-next-line no-unused-vars
@@ -56,3 +61,5 @@ connectDB()
     console.error("Failed to connect to MongoDB", err);
     process.exit(1);
   });
+console.log("PROVIDER:", process.env.FOOD_ANALYSIS_PROVIDER);
+console.log("HF TOKEN:", process.env.HF_API_TOKEN);

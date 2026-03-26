@@ -13,10 +13,13 @@ import { AddDonationPage } from "./pages/AddDonationPage.jsx";
 import { AIInsightsPage } from "./pages/AIInsightsPage.jsx";
 import { HeatmapPage } from "./pages/HeatmapPage.jsx";
 import { LandingPage } from "./pages/LandingPage.jsx";
+import { AnalyticsDashboard } from "./pages/AnalyticsDashboard.jsx";
+import { PathNormalizer } from "./components/PathNormalizer.jsx";
 
 const App = () => {
   return (
     <Layout>
+      <PathNormalizer />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -45,6 +48,15 @@ const App = () => {
           element={
             <ProtectedRoute>
               <RegularDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/dashboard/analytics"
+          element={
+            <ProtectedRoute>
+              <AnalyticsDashboard />
             </ProtectedRoute>
           }
         />

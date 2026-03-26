@@ -5,6 +5,7 @@ import { DonationCard } from "../components/DonationCard.jsx";
 import { MapView } from "../components/MapView.jsx";
 import { ClaimSuccessModal } from "../components/ClaimSuccessModal.jsx";
 import { DonationDetailsModal } from "../components/DonationDetailsModal.jsx";
+import { requestBrowserLocation } from "../utils/geolocation.js";
 
 export const ClaimFlowPage = () => {
   const { user } = useAuth();
@@ -18,6 +19,7 @@ export const ClaimFlowPage = () => {
   });
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [claimedDonation, setClaimedDonation] = useState(null);
   const [detailsDonation, setDetailsDonation] = useState(null);
 
@@ -37,6 +39,7 @@ export const ClaimFlowPage = () => {
   const handleSubmitRequirements = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError("");
     try {
       let lat = form.lat ? Number(form.lat) : null;
       let lng = form.lng ? Number(form.lng) : null;
@@ -67,7 +70,13 @@ export const ClaimFlowPage = () => {
 
   const handleClaim = async (id, servings) => {
     try {
-      const res = await api.put(`/donations/${id}/claim`, servings ? { amount: servings } : {});
+      setError("");
+      const loc = await requestBrowserLocation();
+      if (!loc) {
+        setError("Location is required to claim a donation. Please allow location access and try again.");
+        return;
+      }
+      const res = await api.put(`/donations/${id}/claim`, { amount: servings, location: loc });
       setClaimedDonation(res.data);
       setSuggestions((prev) => prev.filter((s) => s.donation._id !== id));
     } catch {
@@ -179,6 +188,11 @@ export const ClaimFlowPage = () => {
           ← Change requirements
         </button>
       </div>
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-200">
+          {error}
+        </div>
+      )}
       {mapMarkers.length > 0 && (
         <div>
           <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">

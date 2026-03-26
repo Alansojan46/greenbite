@@ -30,6 +30,11 @@ export const FoodAIAnalyzer = ({
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
   const [selectedLabel, setSelectedLabel] = useState("");
+  const [customLabel, setCustomLabel] = useState("");
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackError, setFeedbackError] = useState("");
+  const [feedbackOk, setFeedbackOk] = useState("");
+  const [showCorrection, setShowCorrection] = useState(false);
 
   const file = fileProp ?? internalFile;
   const preparedAt = preparedAtProp ?? internalPreparedAt;
@@ -47,6 +52,10 @@ export const FoodAIAnalyzer = ({
   const handleAnalyze = async () => {
     setError("");
     setResult(null);
+    setFeedbackError("");
+    setFeedbackOk("");
+    setShowCorrection(false);
+    setCustomLabel("");
 
     if (!file) {
       setError("Please choose a food image.");
@@ -71,6 +80,33 @@ export const FoodAIAnalyzer = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  const canSendFeedback = !!result?.analysisId;
+
+  const submitFeedback = async ({ isCorrect, correctedFoodType, okMessage }) => {
+    if (!result?.analysisId) return;
+    setFeedbackError("");
+    setFeedbackOk("");
+    setFeedbackLoading(true);
+    try {
+      await api.post("/ai/food-feedback", {
+        analysisId: result.analysisId,
+        isCorrect,
+        correctedFoodType,
+      });
+      setFeedbackOk(okMessage || "Feedback saved.");
+    } catch (err) {
+      setFeedbackError(err?.response?.data?.message || err?.message || "Failed to save feedback.");
+    } finally {
+      setFeedbackLoading(false);
+    }
+  };
+
+  const applyLabelLocally = (label) => {
+    if (!label) return;
+    setSelectedLabel(label);
+    setResult((p) => (p ? { ...p, foodType: label } : p));
   };
 
   return (
@@ -192,7 +228,9 @@ export const FoodAIAnalyzer = ({
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-slate-600 dark:text-slate-400">AI Confidence:</span>
-              <span className="font-semibold text-slate-900 dark:text-slate-100">{result.aiConfidence}%</span>
+              <span className="font-semibold text-slate-900 dark:text-slate-100">
+                {result.aiConfidence}%
+              </span>
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-slate-600 dark:text-slate-400">Urgency Level:</span>
@@ -231,37 +269,110 @@ export const FoodAIAnalyzer = ({
                     );
                   })}
               </select>
-              <div className="mt-2 flex gap-2">
+
+              <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={async () => {
-                    try {
-                      if (result?.analysisId && selectedLabel) {
-                        await api.post("/ai/food-feedback", {
-                          analysisId: result.analysisId,
-                          correctFoodType: selectedLabel,
-                        });
-                      }
-                    } catch {
-                      // ignore
-                    }
-                  }}
-                  className="rounded-lg bg-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                >
-                  Save correction
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
                     if (!selectedLabel) return;
-                    // Update the report locally so Apply uses the corrected type.
-                    setResult((p) => (p ? { ...p, foodType: selectedLabel } : p));
+                    applyLabelLocally(selectedLabel);
+                    if (canSendFeedback) {
+                      await submitFeedback({
+                        isCorrect: false,
+                        correctedFoodType: selectedLabel,
+                        okMessage: "Saved. We’ll use this correction next time.",
+                      });
+                    }
+                    if (typeof onApply === "function") onApply({ ...result, foodType: selectedLabel });
                   }}
-                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
+                  disabled={feedbackLoading}
+                  className="rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white"
                 >
                   Use this label
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCorrection((p) => !p)}
+                  className="rounded-lg bg-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                >
+                  {showCorrection ? "Hide custom label" : "Type custom label"}
+                </button>
               </div>
+
+              <div className="mt-2">
+                <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                  Is the selected label correct?
+                </p>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!canSendFeedback) return;
+                      await submitFeedback({ isCorrect: true, okMessage: "Thanks! We’ll use this feedback next time." });
+                    }}
+                    disabled={!canSendFeedback || feedbackLoading}
+                    className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                  >
+                    Yes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCorrection(true)}
+                    className="rounded-lg bg-rose-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-rose-500"
+                  >
+                    No
+                  </button>
+                </div>
+              </div>
+
+              {showCorrection && (
+                <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/30">
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200" htmlFor="customFoodLabel">
+                    Correct food name (type if needed)
+                  </label>
+                  <input
+                    id="customFoodLabel"
+                    value={customLabel}
+                    onChange={(e) => setCustomLabel(e.target.value)}
+                    placeholder="Type the correct label"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const label = String(customLabel || "").trim() || String(selectedLabel || "").trim();
+                        if (!label) return;
+                        applyLabelLocally(label);
+                        if (canSendFeedback) {
+                          await submitFeedback({
+                            isCorrect: false,
+                            correctedFoodType: label,
+                            okMessage: "Saved. We’ll use this correction next time.",
+                          });
+                        }
+                        setShowCorrection(false);
+                      }}
+                      disabled={feedbackLoading}
+                      className="rounded-lg bg-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-300 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                    >
+                      Save this correction
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {(feedbackError || feedbackOk) && (
+                <div
+                  className={`mt-2 rounded-lg border p-2 text-[11px] ${
+                    feedbackError
+                      ? "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
+                  }`}
+                >
+                  {feedbackError || feedbackOk}
+                </div>
+              )}
             </div>
           )}
 

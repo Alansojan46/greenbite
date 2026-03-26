@@ -3,6 +3,7 @@ import { api } from "../services/api.js";
 import { DonationCard } from "../components/DonationCard.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import { DonationDetailsModal } from "../components/DonationDetailsModal.jsx";
+import { requestBrowserLocation } from "../utils/geolocation.js";
 
 export const AIInsightsPage = () => {
   const { user } = useAuth();
@@ -10,14 +11,21 @@ export const AIInsightsPage = () => {
   const [latest, setLatest] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [userLocation, setUserLocation] = useState(null);
   const [claimingId, setClaimingId] = useState("");
   const [detailsDonation, setDetailsDonation] = useState(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (locOverride) => {
     setError("");
     setLoading(true);
     try {
-      const res = await api.get("/donations/ai-suggestions");
+      const params = new URLSearchParams();
+      const activeLoc = locOverride || userLocation;
+      if (activeLoc?.lat != null && activeLoc?.lng != null) {
+        params.set("lat", String(activeLoc.lat));
+        params.set("lng", String(activeLoc.lng));
+      }
+      const res = await api.get(`/donations/ai-suggestions${params.toString() ? `?${params}` : ""}`);
       setTopImpact(res.data.topImpactDonations || []);
       setLatest(res.data.latestDonations || []);
     } catch (err) {
@@ -31,10 +39,22 @@ export const AIInsightsPage = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [userLocation?.lat, userLocation?.lng]);
 
   useEffect(() => {
-    load();
+    let cancelled = false;
+    (async () => {
+      const role = user?.role?.toLowerCase?.();
+      const canClaim = !!user && (role === "ngo" || role === "regular");
+      if (canClaim) {
+        const loc = await requestBrowserLocation();
+        if (!cancelled && loc) setUserLocation(loc);
+      }
+      if (!cancelled) await load();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [load]);
 
   const canClaim =
@@ -47,9 +67,15 @@ export const AIInsightsPage = () => {
       setError("");
       setClaimingId(id);
       try {
-        await api.put(`/donations/${id}/claim`, servings ? { amount: servings } : {});
+        const loc = await requestBrowserLocation();
+        if (!loc) {
+          setError("Location is required to claim a donation. Please allow location access and try again.");
+          return;
+        }
+        setUserLocation(loc);
+        await api.put(`/donations/${id}/claim`, { amount: servings, location: loc });
         // Refresh so status updates (and list stays in sync with server sorting).
-        await load();
+        await load(loc);
       } catch (err) {
         const message =
           err?.response?.data?.message ||

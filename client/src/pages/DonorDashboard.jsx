@@ -5,9 +5,15 @@ import { StatsPanel } from "../components/StatsPanel.jsx";
 import { FoodAIAnalyzer } from "../components/FoodAIAnalyzer.jsx";
 import { DonationDetailsModal } from "../components/DonationDetailsModal.jsx";
 import { NotificationsPanel } from "../components/NotificationsPanel.jsx";
+import { MapView } from "../components/MapView.jsx";
+import { requestBrowserLocation } from "../utils/geolocation.js";
 
 export const DonorDashboard = () => {
   const { user } = useAuth();
+  const googleMapsKey =
+    import.meta.env.VITE_GOOGLE_MAPS_API_KEY || import.meta.env.GOOGLE_MAPS_API_KEY || "";
+  const googleMapsEnabled =
+    String(import.meta.env.VITE_ENABLE_GOOGLE_MAPS || "").toLowerCase() === "true" && !!googleMapsKey;
   const [donations, setDonations] = useState([]);
   const [donationsError, setDonationsError] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -24,6 +30,11 @@ export const DonorDashboard = () => {
   const [imageFile, setImageFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [locationError, setLocationError] = useState("");
+  const [locationMode, setLocationMode] = useState(""); // "" | "current" | "map"
+  const [publishLocation, setPublishLocation] = useState(null);
+  const [mapCenter, setMapCenter] = useState(null);
+  const [manualLat, setManualLat] = useState("");
+  const [manualLng, setManualLng] = useState("");
 
   const loadDonations = async () => {
     setDonationsError("");
@@ -43,18 +54,31 @@ export const DonorDashboard = () => {
     loadDonations();
   }, []);
 
-  const captureLocation = () =>
-    new Promise((resolve) => {
-      if (!navigator.geolocation) resolve(null);
-      navigator.geolocation.getCurrentPosition(
-        (pos) =>
-          resolve({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude
-          }),
-        () => resolve(null)
-      );
-    });
+  const captureLocation = async () => requestBrowserLocation();
+
+  const syncManualFromLocation = (loc) => {
+    if (!loc) {
+      setManualLat("");
+      setManualLng("");
+      return;
+    }
+    setManualLat(String(Number(loc.lat).toFixed(6)));
+    setManualLng(String(Number(loc.lng).toFixed(6)));
+  };
+
+  const updateManualLocation = (nextLat, nextLng) => {
+    setManualLat(nextLat);
+    setManualLng(nextLng);
+    const lat = Number(nextLat);
+    const lng = Number(nextLng);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      const loc = { lat, lng };
+      setPublishLocation(loc);
+      setMapCenter(loc);
+    } else {
+      setPublishLocation(null);
+    }
+  };
 
   const handleChange = (e) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -69,19 +93,26 @@ export const DonorDashboard = () => {
     }
     setSubmitting(true);
     try {
-      const location = await captureLocation();
+      if (!locationMode) {
+        setLocationError("Please choose how you want to set the donation location (current location or pick on map).");
+        setSubmitting(false);
+        return;
+      }
+      const location = publishLocation;
       if (!location) {
-        setLocationError("Location is required. Please allow location access and try again.");
+        setLocationError(
+          locationMode === "map"
+            ? "Please pick a location on the map to publish this donation."
+            : "Please allow location access to use your current location."
+        );
         setSubmitting(false);
         return;
       }
       const data = new FormData();
       Object.entries(form).forEach(([key, value]) => value && data.append(key, value));
       if (foodAnalysisId) data.append("foodAnalysisId", foodAnalysisId);
-      if (location) {
-        data.append("location.lat", location.lat);
-        data.append("location.lng", location.lng);
-      }
+      data.append("location.lat", location.lat);
+      data.append("location.lng", location.lng);
       if (imageFile) {
         data.append("foodImage", imageFile);
       }
@@ -105,6 +136,10 @@ export const DonorDashboard = () => {
       });
       setImageFile(null);
       setFoodAnalysisId("");
+      setLocationMode("");
+      setPublishLocation(null);
+      setMapCenter(null);
+      syncManualFromLocation(null);
       // Ensure server-side computed fields + ordering are reflected.
       await loadDonations();
     } catch (err) {
@@ -190,6 +225,131 @@ export const DonorDashboard = () => {
               onChange={handleChange}
               className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
             />
+          </div>
+
+          <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/30">
+            <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+              Donation location
+            </p>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <button
+                type="button"
+                onClick={async () => {
+                  setLocationError("");
+                  setLocationMode("current");
+                  const loc = await captureLocation();
+                  if (!loc) {
+                    setPublishLocation(null);
+                    syncManualFromLocation(null);
+                    setLocationError("Location access was denied. You can pick a location on the map instead.");
+                    return;
+                  }
+                  setPublishLocation(loc);
+                  setMapCenter(loc);
+                  syncManualFromLocation(loc);
+                }}
+                className={`rounded-full px-3 py-1.5 font-semibold ring-1 ${
+                  locationMode === "current"
+                    ? "bg-primary-600 text-white ring-primary-600 dark:text-slate-950"
+                    : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-800"
+                }`}
+              >
+                Use current location
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setLocationError("");
+                  setLocationMode("map");
+                  setPublishLocation(null);
+                  syncManualFromLocation(null);
+                  if (!mapCenter) {
+                    const loc = await captureLocation();
+                    if (loc) setMapCenter(loc);
+                  }
+                }}
+                className={`rounded-full px-3 py-1.5 font-semibold ring-1 ${
+                  locationMode === "map"
+                    ? "bg-primary-600 text-white ring-primary-600 dark:text-slate-950"
+                    : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-800"
+                }`}
+              >
+                Pick on map
+              </button>
+            </div>
+
+            <div className="text-[11px] text-slate-600 dark:text-slate-300">
+              Selected:{" "}
+              <span className="font-semibold">
+                {publishLocation
+                  ? `${publishLocation.lat.toFixed(5)}, ${publishLocation.lng.toFixed(5)}`
+                  : "Not selected"}
+              </span>
+            </div>
+
+            {locationMode === "map" && (
+              <div className="space-y-2">
+                {!googleMapsEnabled && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
+                    Map click-to-pick requires Google Maps to be enabled. You can still set the location by entering
+                    latitude/longitude below.
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-200" htmlFor="manualLatDonor">
+                      Latitude
+                    </label>
+                    <input
+                      id="manualLatDonor"
+                      value={manualLat}
+                      onChange={(e) => updateManualLocation(e.target.value, manualLng)}
+                      placeholder="e.g., 12.9716"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-200" htmlFor="manualLngDonor">
+                      Longitude
+                    </label>
+                    <input
+                      id="manualLngDonor"
+                      value={manualLng}
+                      onChange={(e) => updateManualLocation(manualLat, e.target.value)}
+                      placeholder="e.g., 77.5946"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+
+                <MapView
+                  center={publishLocation || mapCenter || undefined}
+                  zoom={mapCenter ? 15 : 12}
+                  height="240px"
+                  pickable
+                  pickedLocation={publishLocation}
+                  onPickLocation={(loc) => {
+                    setPublishLocation(loc);
+                    setMapCenter(loc);
+                    syncManualFromLocation(loc);
+                  }}
+                  pickedLabel="Donation"
+                />
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPublishLocation(null);
+                      syncManualFromLocation(null);
+                    }}
+                    className="rounded-full bg-slate-200 px-3 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    Clear selection
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -292,9 +452,11 @@ export const DonorDashboard = () => {
               if (r?.analysisId) setFoodAnalysisId(r.analysisId);
               setForm((p) => ({
                 ...p,
-                foodName: p.foodName || r?.foodType || "",
+                foodName: r?.foodType ? r.foodType : p.foodName,
                 estimatedPeopleServed:
-                  p.estimatedPeopleServed || String(r?.estimatedServings || ""),
+                  r?.estimatedServings != null && String(r.estimatedServings)
+                    ? String(r.estimatedServings)
+                    : p.estimatedPeopleServed,
               }));
             }}
           />
@@ -304,7 +466,7 @@ export const DonorDashboard = () => {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || !locationMode || !publishLocation}
             className="mt-1 w-full rounded-lg bg-primary-600 py-2 text-sm font-semibold text-white shadow-md hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-slate-400 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
           >
             {submitting ? "Publishing..." : "Publish donation"}
