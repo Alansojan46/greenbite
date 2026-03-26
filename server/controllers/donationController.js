@@ -4,7 +4,7 @@ import Donation from "../models/Donation.js";
 import cloudinary from "../utils/cloudinary.js";
 import { estimateSpoilageRisk } from "../services/spoilageService.js";
 import { calculateImpactScore } from "../services/impactService.js";
-import { notifyDonationClaimed, notifyDonationPosted } from "../services/notificationService.js";
+import { notifyDonationClaimed, notifyDonationExpired, notifyDonationPosted } from "../services/notificationService.js";
 
 const parseLatLng = ({ location, lat, lng, flatLat, flatLng }) => {
   const rawLat = location?.lat ?? lat ?? flatLat;
@@ -25,6 +25,42 @@ const haversineDistanceKm = (a, b) => {
     Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
   return R * c;
+};
+
+const isDonationExpired = (donation) => {
+  const expiry = donation?.expiryEstimate ? new Date(donation.expiryEstimate).getTime() : null;
+  if (!expiry || !Number.isFinite(expiry)) return false;
+  return Date.now() > expiry;
+};
+
+const applyExpiryToDonation = (donation) => {
+  if (!donation) return donation;
+  const expired = isDonationExpired(donation);
+  if (!expired) return donation;
+  // Keep original status in DB until cleanup; represent as expired to clients.
+  return { ...donation, status: "expired" };
+};
+
+const expireDonationsForDonorAndNotify = async ({ donorId }) => {
+  if (!donorId) return;
+  const now = new Date();
+  const candidates = await Donation.find({
+    donorId,
+    status: { $ne: "expired" },
+    expiryEstimate: { $ne: null, $lt: now },
+  }).select("_id foodName expiryEstimate");
+
+  if (!candidates.length) return;
+
+  await Donation.updateMany(
+    { _id: { $in: candidates.map((d) => d._id) } },
+    { $set: { status: "expired" } }
+  );
+
+  // Best-effort: notify donor (idempotent in service).
+  await Promise.all(
+    candidates.map((d) => notifyDonationExpired({ donorId, donation: d }).catch(() => null))
+  );
 };
 
 export const createDonation = async (req, res) => {
@@ -150,6 +186,11 @@ export const getDonations = async (req, res) => {
     if (status) filter.status = status;
     if (donor === "me") filter.donorId = req.user._id;
 
+    if (donor === "me") {
+      // Don't block the request; keep DB consistent + give donor a notification.
+      void expireDonationsForDonorAndNotify({ donorId: req.user._id }).catch(() => null);
+    }
+
     let query = Donation.find(filter)
       .sort({ createdAt: -1 })
       .populate("donorId", "name email organizationName location address phone")
@@ -161,7 +202,15 @@ export const getDonations = async (req, res) => {
     }
 
     const requesterLoc = parseLatLng({ lat, lng });
-    const donations = await query.lean();
+    const donationsRaw = await query.lean();
+
+    // Apply expiry projection and optionally filter out expired when caller asked for available.
+    const donations = donationsRaw
+      .map(applyExpiryToDonation)
+      .filter((d) => {
+        if (String(status || "").toLowerCase() === "available") return String(d?.status) === "available";
+        return true;
+      });
 
     const withDistance = requesterLoc
       ? donations.map((d) => {
@@ -175,13 +224,33 @@ export const getDonations = async (req, res) => {
       : donations;
 
     if (requesterLoc && String(sort || "").toLowerCase() === "nearest") {
+      const statusRank = (s) => {
+        const v = String(s || "").toLowerCase();
+        if (v === "available") return 0;
+        if (v === "claimed") return 1;
+        if (v === "completed") return 2;
+        if (v === "expired") return 3;
+        return 4;
+      };
+
       withDistance.sort((a, b) => {
+        const sa = statusRank(a?.status);
+        const sb = statusRank(b?.status);
+        if (sa !== sb) return sa - sb;
+
         const da = a?.distanceKm;
         const db = b?.distanceKm;
         if (da == null && db == null) return 0;
         if (da == null) return 1;
         if (db == null) return -1;
-        return da - db;
+
+        const d = da - db;
+        if (d !== 0) return d;
+
+        // Stable tie-breaker: newest first
+        const ta = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tb - ta;
       });
     }
 
@@ -220,10 +289,16 @@ export const claimDonation = async (req, res) => {
       null;
 
     const donation = await Donation.findById(donationId).select(
-      "status estimatedPeopleServed remainingPeopleServed quantityUnits remainingUnits quantityKg remainingKg donorId foodName"
+      "status estimatedPeopleServed remainingPeopleServed quantityUnits remainingUnits quantityKg remainingKg donorId foodName expiryEstimate"
     );
 
     if (!donation) return res.status(404).json({ message: "Donation not found" });
+    if (isDonationExpired(donation)) {
+      // Update status in DB best-effort so it stops showing up as claimable.
+      await Donation.updateOne({ _id: donationId, status: { $ne: "expired" } }, { $set: { status: "expired" } });
+      await notifyDonationExpired({ donorId: donation.donorId, donation }).catch(() => null);
+      return res.status(410).json({ message: "Donation has expired" });
+    }
     if (donation.status !== "available") {
       return res.status(409).json({ message: "Donation is not available" });
     }
@@ -375,6 +450,11 @@ export const getAiSuggestions = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(10);
 
+    const projectList = (list) =>
+      (Array.isArray(list) ? list : [])
+        .map(applyExpiryToDonation)
+        .filter((d) => String(d?.status || "").toLowerCase() !== "expired");
+
     const addDistance = (list) => {
       if (!requesterLoc) return list;
       return list.map((d) => {
@@ -388,8 +468,8 @@ export const getAiSuggestions = async (req, res) => {
     };
 
     res.json({
-      topImpactDonations: addDistance(topByImpact),
-      latestDonations: addDistance(latest),
+      topImpactDonations: addDistance(projectList(topByImpact)),
+      latestDonations: addDistance(projectList(latest)),
     });
   } catch (err) {
     console.error("AI suggestions error", err);

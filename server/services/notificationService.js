@@ -70,3 +70,24 @@ export const notifyDonationPosted = async ({ donor, donation }) => {
     { ordered: false }
   );
 };
+
+export const notifyDonationExpired = async ({ donorId, donation }) => {
+  if (!donorId || !donation?._id) return;
+
+  const message = `Your donation "${donation.foodName}" has expired and is no longer available.`;
+
+  // Idempotent: avoids duplicate notifications across refreshes and race conditions.
+  await Notification.updateOne(
+    { userId: donorId, type: "donation_expired", donationId: donation._id },
+    {
+      $setOnInsert: {
+        userId: donorId,
+        type: "donation_expired",
+        donationId: donation._id,
+        message,
+        read: false,
+      },
+    },
+    { upsert: true }
+  );
+};

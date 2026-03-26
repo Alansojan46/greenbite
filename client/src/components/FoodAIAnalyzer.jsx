@@ -116,7 +116,7 @@ export const FoodAIAnalyzer = ({
           AI Food Verification
         </h2>
         <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-          Upload a food image to detect type, approximate servings, and freshness risk.
+          Upload a food image to detect type and freshness risk.
         </p>
       </div>
 
@@ -215,10 +215,6 @@ export const FoodAIAnalyzer = ({
             <div className="flex items-center justify-between gap-3">
               <span className="text-slate-600 dark:text-slate-400">Food Detected:</span>
               <span className="font-semibold text-slate-900 dark:text-slate-100">{result.foodType}</span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-slate-600 dark:text-slate-400">Estimated Servings:</span>
-              <span className="font-semibold text-slate-900 dark:text-slate-100">{result.estimatedServings}</span>
             </div>
             <div className="flex items-center justify-between gap-3">
               <span className="text-slate-600 dark:text-slate-400">Freshness Risk:</span>

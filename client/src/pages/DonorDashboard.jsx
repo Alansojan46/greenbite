@@ -23,7 +23,6 @@ export const DonorDashboard = () => {
     foodName: "",
     quantityKg: "",
     quantityUnits: "",
-    estimatedPeopleServed: "",
     preparedAt: "",
     expiryEstimate: ""
   });
@@ -130,7 +129,6 @@ export const DonorDashboard = () => {
         foodName: "",
         quantityKg: "",
         quantityUnits: "",
-        estimatedPeopleServed: "",
         preparedAt: "",
         expiryEstimate: ""
       });
@@ -158,13 +156,15 @@ export const DonorDashboard = () => {
 
   const stats = useMemo(() => {
     const total = donations.length;
-    const claimed = donations.filter((d) => d.status === "claimed").length;
-    const avgImpact =
-      donations.reduce((sum, d) => sum + (d.impactScore || 0), 0) / (total || 1);
+    const claimed = donations.filter((d) => {
+      const s = String(d?.status || "").toLowerCase();
+      if (s === "claimed" || s === "completed") return true;
+      if (Array.isArray(d?.claims) && d.claims.length > 0) return true;
+      return false;
+    }).length;
     return {
       totalDonations: total,
       claimedDonations: claimed,
-      avgImpactScore: Math.round(avgImpact)
     };
   }, [donations]);
 
@@ -200,7 +200,7 @@ export const DonorDashboard = () => {
 
       <NotificationsPanel title="Notifications" limit={5} />
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid items-start gap-6 md:grid-cols-2">
         <form
           onSubmit={handleSubmit}
           className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/70"
@@ -381,23 +381,6 @@ export const DonorDashboard = () => {
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label
-              className="text-xs text-slate-600 dark:text-slate-300"
-              htmlFor="estimatedPeopleServed"
-            >
-              Estimated people served
-            </label>
-            <input
-              id="estimatedPeopleServed"
-              name="estimatedPeopleServed"
-              type="number"
-              value={form.estimatedPeopleServed}
-              onChange={handleChange}
-              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-            />
-          </div>
-
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs text-slate-600 dark:text-slate-300" htmlFor="preparedAt">
@@ -453,10 +436,6 @@ export const DonorDashboard = () => {
               setForm((p) => ({
                 ...p,
                 foodName: r?.foodType ? r.foodType : p.foodName,
-                estimatedPeopleServed:
-                  r?.estimatedServings != null && String(r.estimatedServings)
-                    ? String(r.estimatedServings)
-                    : p.estimatedPeopleServed,
               }));
             }}
           />
@@ -531,7 +510,17 @@ export const DonorDashboard = () => {
               >
                 <div className="flex items-center justify-between">
                   <p className="font-medium text-slate-900 dark:text-slate-100">{d.foodName}</p>
-                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide ${
+                      String(d.status || "").toLowerCase() === "available"
+                        ? "bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/40 dark:text-emerald-300"
+                        : String(d.status || "").toLowerCase() === "claimed"
+                        ? "bg-amber-500/10 text-amber-600 ring-1 ring-amber-500/40 dark:text-amber-300"
+                        : String(d.status || "").toLowerCase() === "expired"
+                        ? "bg-rose-500/10 text-rose-700 ring-1 ring-rose-500/40 dark:text-rose-200"
+                        : "bg-slate-200 text-slate-600 ring-1 ring-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700/60"
+                    }`}
+                  >
                     {d.status}
                   </span>
                 </div>
@@ -556,9 +545,9 @@ export const DonorDashboard = () => {
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
                     Remaining:{" "}
                     <span className="font-semibold text-slate-700 dark:text-slate-200">
-                      {d.remainingPeopleServed ?? d.estimatedPeopleServed ?? "-"}
+                      {d.remainingKg ?? d.quantityKg ?? d.remainingUnits ?? d.quantityUnits ?? "-"}
                     </span>{" "}
-                    servings
+                    {d.remainingKg != null || d.quantityKg != null ? "kg" : d.remainingUnits != null || d.quantityUnits != null ? "units" : ""}
                   </p>
                 </div>
               </div>

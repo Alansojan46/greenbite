@@ -9,7 +9,7 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["donation_claimed", "donation_posted"],
+      enum: ["donation_claimed", "donation_posted", "donation_expired"],
       default: "donation_claimed",
     },
     donationId: { type: mongoose.Schema.Types.ObjectId, ref: "Donation", required: true },

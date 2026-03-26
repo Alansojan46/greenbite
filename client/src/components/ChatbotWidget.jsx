@@ -97,6 +97,67 @@ const isHelpIntent = (msg) => {
   return m === "help" || m.includes("what can you do") || m.includes("commands");
 };
 
+const isTimeIntent = (msg) => {
+  const m = normalize(msg);
+  if (!m) return false;
+  return (
+    m === "time" ||
+    m.includes("current time") ||
+    m.includes("what time") ||
+    m.includes("time now") ||
+    m.includes("tell me the time")
+  );
+};
+
+const isDateIntent = (msg) => {
+  const m = normalize(msg);
+  if (!m) return false;
+  return m === "date" || m.includes("today's date") || m.includes("what date") || m.includes("day today");
+};
+
+const isApiStatusIntent = (msg) => {
+  const m = normalize(msg);
+  if (!m) return false;
+  return (
+    m.includes("api running") ||
+    m.includes("server running") ||
+    m.includes("backend running") ||
+    m.includes("is the api") ||
+    m.includes("is your api") ||
+    m.includes("service status")
+  );
+};
+
+const formatLocalTime = () => {
+  const now = new Date();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local time";
+  return `Current time: ${now.toLocaleString()} (${tz}).`;
+};
+
+const formatLocalDate = () => {
+  const now = new Date();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local time";
+  return `Today's date: ${now.toLocaleDateString()} (${tz}).`;
+};
+
+const fetchJsonWithTimeout = async (url, { timeoutMs = 2500 } = {}) => {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal, credentials: "same-origin" });
+    const ok = res.ok;
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+    return { ok, status: res.status, data };
+  } finally {
+    clearTimeout(t);
+  }
+};
+
 const isAvailableFoodIntent = (msg) => {
   const m = normalize(msg);
   if (!m) return false;
@@ -113,10 +174,9 @@ const isAvailableFoodIntent = (msg) => {
 
 const formatDonationLine = (d) => {
   const name = d?.foodName || "Donation";
-  const people = d?.estimatedPeopleServed ? `${d.estimatedPeopleServed} people` : "";
   const kg = d?.quantityKg ? `${d.quantityKg} kg` : "";
   const units = d?.quantityUnits ? `${d.quantityUnits} units` : "";
-  const qty = [people, kg, units].filter(Boolean).join(", ");
+  const qty = [kg, units].filter(Boolean).join(", ");
   const impact = d?.impactScore != null ? `impact ${d.impactScore}` : "";
   const spoil = d?.spoilageRisk != null ? `spoilage ${d.spoilageRisk}%` : "";
   const bits = [qty, impact, spoil].filter(Boolean).join(" · ");
@@ -219,6 +279,8 @@ export const ChatbotWidget = () => {
       return base;
     }
     base.push({ label: "Show available food", text: "show available food" });
+    base.push({ label: "Current time", text: "what time is it" });
+    base.push({ label: "API status", text: "is your api running correctly" });
     base.push({ label: "Go to feed", text: "go to feed" });
     base.push({ label: "Go to heatmap", text: "go to heatmap" });
     base.push({ label: "Go to AI Insights", text: "go to ai insights" });
@@ -251,6 +313,49 @@ export const ChatbotWidget = () => {
     }
     if (normalized === "describe this page" || isDescribeIntent(normalized)) {
       pushBot(pageDescriptionForPath(location.pathname));
+      return;
+    }
+
+    // General deterministic intents (works even if LLM is down)
+    if (isTimeIntent(normalized)) {
+      pushBot(formatLocalTime());
+      return;
+    }
+    if (isDateIntent(normalized)) {
+      pushBot(formatLocalDate());
+      return;
+    }
+    if (isApiStatusIntent(normalized)) {
+      pushBot("Checking server status…");
+      try {
+        const health = await fetchJsonWithTimeout("/health", { timeoutMs: 2500 });
+        const chatStatus = await api
+          .get("/chat/status", { timeout: 2500 })
+          .then((r) => ({ ok: true, status: 200, data: r.data }))
+          .catch((e) => ({ ok: false, status: e?.response?.status || 0, data: null }));
+
+        const bits = [];
+        bits.push(
+          health.ok
+            ? `Backend: OK (${health.data?.service || "service"})`
+            : `Backend: not reachable (HTTP ${health.status || "?"})`
+        );
+        if (chatStatus.ok) {
+          const ollama = chatStatus.data?.ollama;
+          const openai = chatStatus.data?.openai;
+          bits.push(
+            `Assistant: Ollama ${ollama?.reachable ? "reachable" : "not reachable"} (model: ${ollama?.model || "-"})`
+          );
+          bits.push(
+            `Assistant: OpenAI ${openai?.configured ? (openai?.reachable ? "reachable" : "configured but not reachable") : "not configured"} (model: ${openai?.model || "-"})`
+          );
+        } else {
+          bits.push("Assistant: status check failed.");
+        }
+        pushBot(bits.join("\n"));
+      } catch {
+        pushBot("I couldn’t check the server status right now. Try again in a moment.");
+      }
       return;
     }
 

@@ -32,8 +32,10 @@ export const useNotifications = ({ autoLoad = true } = {}) => {
   const markAllRead = useCallback(async () => {
     try {
       await api.patch("/notifications/read");
-      // UX: after marking read, hide the panel (clears the list).
-      setNotifications([]);
+      // Keep items visible; just mark them read locally.
+      setNotifications((prev) =>
+        (Array.isArray(prev) ? prev : []).map((n) => (n ? { ...n, read: true } : n))
+      );
     } catch {
       // ignore
     }

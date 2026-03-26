@@ -9,8 +9,8 @@ const router = express.Router();
 router.post("/best-match", authenticate, getBestMatch);
 router.get("/heatmap", authenticate, getHungerHeatmap);
 router.get("/match-suggestions", authenticate, getMatchSuggestions);
-router.post("/recognize-food", authenticate, authorizeRoles("donor"), upload.single("image"), recognizeFood);
-router.post("/analyze-food", authenticate, authorizeRoles("donor"), upload.single("image"), analyzeFood);
-router.post("/food-feedback", authenticate, authorizeRoles("donor"), submitFoodAnalysisFeedback);
+router.post("/recognize-food", authenticate, authorizeRoles("donor", "regular"), upload.single("image"), recognizeFood);
+router.post("/analyze-food", authenticate, authorizeRoles("donor", "regular"), upload.single("image"), analyzeFood);
+router.post("/food-feedback", authenticate, authorizeRoles("donor", "regular"), submitFoodAnalysisFeedback);
 
 export default router;

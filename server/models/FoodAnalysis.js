@@ -22,7 +22,7 @@ const foodAnalysisSchema = new mongoose.Schema(
 
     // Optional metadata for debugging/iteration
     modelId: { type: String, default: "" },
-    rawLabel: { type: String, default: "" },
+    rawLabel: { type: String, default: "", index: true },
     rawScore: { type: Number, default: 0 },
     candidates: {
       type: [

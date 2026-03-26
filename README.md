@@ -57,11 +57,11 @@ Optional (Hugging Face):
 
 ### Food Recognition API
 
-- `POST /api/ai/recognize-food` (auth required; donor role)
+- `POST /api/ai/recognize-food` (auth required; donor/regular role)
   - Accepts either `multipart/form-data` with `image` file **or** JSON body with `imageUrl`
   - Response shape: `{ label, confidence, topK, analyzedAt, model }`
 
-Note: `POST /api/ai/analyze-food` supports an optional `retry=true` (form field) to request an alternate label on the *same image*. Without `retry=true`, re-analyzing the same image will not intentionally avoid the previous correct label.
+Note: `POST /api/ai/analyze-food` (donor/regular role) supports an optional `retry=true` (form field) to request an alternate label on the *same image*. Without `retry=true`, re-analyzing the same image will not intentionally avoid the previous correct label.
 
 Smoke check (requires a valid donor JWT):
 

@@ -22,7 +22,15 @@ export const findBestDonationMatch = async ({
   foodRequiredQuantity,
   urgencyLevel,
 }) => {
-  const donations = await Donation.find({ status: "available" });
+  const now = new Date();
+  const donations = await Donation.find({
+    status: "available",
+    $or: [
+      { expiryEstimate: { $exists: false } },
+      { expiryEstimate: null },
+      { expiryEstimate: { $gt: now } },
+    ],
+  });
 
   if (!donations.length) return null;
 
@@ -121,7 +129,15 @@ export const findMultipleMatches = async ({
   foodType = "",
   limit = 10,
 }) => {
-  const donations = await Donation.find({ status: "available" });
+  const now = new Date();
+  const donations = await Donation.find({
+    status: "available",
+    $or: [
+      { expiryEstimate: { $exists: false } },
+      { expiryEstimate: null },
+      { expiryEstimate: { $gt: now } },
+    ],
+  });
 
   const pickAvailableQuantity = (donation) =>
     donation.remainingPeopleServed ||

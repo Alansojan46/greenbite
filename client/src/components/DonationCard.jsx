@@ -16,6 +16,9 @@ export const DonationCard = ({ donation, onClaim, canClaim, onViewDetails }) => 
     distanceKm,
   } = donation;
 
+  const normalizedStatus = String(status || "").toLowerCase();
+  const isExpired = normalizedStatus === "expired";
+
   const servingsTotal = estimatedPeopleServed != null ? Number(estimatedPeopleServed) : 0;
   const servingsRemaining =
     remainingPeopleServed != null ? Number(remainingPeopleServed) : servingsTotal;
@@ -33,7 +36,7 @@ export const DonationCard = ({ donation, onClaim, canClaim, onViewDetails }) => 
     claimMode === "servings" ? servingsRemaining : claimMode === "units" ? unitsRemaining : kgRemaining;
   const totalByMode =
     claimMode === "servings" ? servingsTotal : claimMode === "units" ? unitsTotal : kgTotal;
-  const unitLabel = claimMode || "amount";
+  const unitLabel = claimMode === "servings" ? "portions" : claimMode || "amount";
 
   const [claimAmount, setClaimAmount] = React.useState(1);
 
@@ -49,7 +52,13 @@ export const DonationCard = ({ donation, onClaim, canClaim, onViewDetails }) => 
   }, [donation?._id, claimMode, remainingByMode]);
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/60 dark:shadow-slate-900/50">
+    <div
+      className={`flex flex-col gap-3 rounded-xl border bg-white p-4 shadow-sm dark:bg-slate-900/60 dark:shadow-slate-900/50 ${
+        isExpired
+          ? "border-rose-200 dark:border-rose-900/50"
+          : "border-slate-200 dark:border-slate-800"
+      }`}
+    >
       <div className="flex items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-50">{foodName}</h3>
@@ -61,10 +70,12 @@ export const DonationCard = ({ donation, onClaim, canClaim, onViewDetails }) => 
         </div>
         <span
           className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-            status === "available"
+            normalizedStatus === "available"
               ? "bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/40 dark:text-emerald-300"
-              : status === "claimed"
+              : normalizedStatus === "claimed"
               ? "bg-amber-500/10 text-amber-600 ring-1 ring-amber-500/40 dark:text-amber-300"
+              : normalizedStatus === "expired"
+              ? "bg-rose-500/10 text-rose-700 ring-1 ring-rose-500/40 dark:text-rose-200"
               : "bg-slate-200 text-slate-600 ring-1 ring-slate-300 dark:bg-slate-700/60 dark:text-slate-300 dark:ring-slate-600/50"
           }`}
         >

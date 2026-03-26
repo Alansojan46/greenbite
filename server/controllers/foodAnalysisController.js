@@ -111,16 +111,20 @@ const parseBooleanish = (value) => {
   return null;
 };
 
-const buildUserLabelOverrides = async (donorId) => {
-  if (!donorId) return {};
-
-  const docs = await FoodAnalysis.find({
-    donorId,
+const buildLabelOverrides = async ({ scope = "global", userId } = {}) => {
+  const s = String(scope || "global").toLowerCase();
+  const filter = {
     rawLabel: { $ne: "" },
     $or: [{ userCorrectedFoodType: { $ne: "" } }, { userOverrideFoodType: { $ne: "" } }],
-  })
+  };
+  if (s === "user") {
+    if (!userId) return { overrides: {}, meta: {} };
+    filter.donorId = userId;
+  }
+
+  const docs = await FoodAnalysis.find(filter)
     .sort({ userFeedbackAt: -1, createdAt: -1 })
-    .limit(200)
+    .limit(s === "user" ? 200 : 500)
     .select("rawLabel userCorrectedFoodType userOverrideFoodType userFeedbackAt");
 
   const perRaw = new Map(); // rawLabelLower -> Map(correctedLower -> {label, count, lastAt})
@@ -157,18 +161,24 @@ const buildUserLabelOverrides = async (donorId) => {
   return { overrides, meta };
 };
 
-const findImageHashFeedback = async ({ donorId, imageHash }) => {
-  if (!donorId || !imageHash) return null;
+const findImageHashFeedback = async ({ scope = "global", userId, imageHash }) => {
+  if (!imageHash) return null;
 
-  const doc = await FoodAnalysis.findOne({
-    donorId,
+  const s = String(scope || "global").toLowerCase();
+  const filter = {
     imageHash,
     $or: [
       { userCorrectedFoodType: { $ne: "" } },
       { userOverrideFoodType: { $ne: "" } },
       { isPredictionCorrect: true },
     ],
-  })
+  };
+  if (s === "user") {
+    if (!userId) return null;
+    filter.donorId = userId;
+  }
+
+  const doc = await FoodAnalysis.findOne(filter)
     .sort({ userFeedbackAt: -1, updatedAt: -1, createdAt: -1 })
     .select("userCorrectedFoodType userOverrideFoodType isPredictionCorrect foodType userFeedbackAt");
 
@@ -237,8 +247,8 @@ export const analyzeFood = async (req, res) => {
     }
 
     // 2) Vision API + rule-based freshness logic
-    const { overrides, meta } = await buildUserLabelOverrides(req.user?._id);
-    const imageFeedback = await findImageHashFeedback({ donorId: req.user?._id, imageHash });
+    const { overrides, meta } = await buildLabelOverrides({ scope: "global", userId: req.user?._id });
+    const imageFeedback = await findImageHashFeedback({ scope: "global", userId: req.user?._id, imageHash });
 
     const report = await deriveFoodAiReport({
       file: req.file,
@@ -323,8 +333,8 @@ export const recognizeFood = async (req, res) => {
     }
 
     const imageHash = computeImageHash(file.buffer);
-    const { overrides, meta } = await buildUserLabelOverrides(req.user?._id);
-    const imageFeedback = await findImageHashFeedback({ donorId: req.user?._id, imageHash });
+    const { overrides, meta } = await buildLabelOverrides({ scope: "global", userId: req.user?._id });
+    const imageFeedback = await findImageHashFeedback({ scope: "global", userId: req.user?._id, imageHash });
 
     const report = await deriveFoodAiReport({
       file,

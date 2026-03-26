@@ -72,6 +72,8 @@ export const NotificationsPanel = ({ title = "Notifications", limit = 5 }) => {
               ? n.donationId._id
               : n?.donationId;
           const clickable = !!donationId;
+          const type = String(n?.type || "").toLowerCase();
+          const isExpired = type === "donation_expired";
           return (
             <li key={n._id} className={n.read ? "opacity-80" : ""}>
               <button
@@ -88,7 +90,18 @@ export const NotificationsPanel = ({ title = "Notifications", limit = 5 }) => {
                 }`}
                 title={clickable ? "Open donation details" : ""}
               >
-                {n.message}
+                <span className="inline-flex items-start gap-2">
+                  {isExpired && (
+                    <span
+                      className={`mt-1 inline-flex h-2 w-2 rounded-full ${
+                        n?.read ? "bg-rose-300 dark:bg-rose-900/60" : "bg-rose-600"
+                      }`}
+                      aria-label="Expired"
+                      title="Expired"
+                    />
+                  )}
+                  <span className="whitespace-normal break-words">{n.message}</span>
+                </span>
                 {n.claimerId?.name && (
                   <span className="ml-1">(Claimed by {n.claimerId.name})</span>
                 )}

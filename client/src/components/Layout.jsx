@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useTheme } from "../context/ThemeContext.jsx";
 import { ChatbotWidget } from "./ChatbotWidget.jsx";
+import { NotificationsInbox } from "./NotificationsInbox.jsx";
 
 export const Layout = ({ children }) => {
   const { user, logout } = useAuth();
@@ -49,7 +50,7 @@ export const Layout = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <header className="border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-900/70">
+      <header className="relative z-50 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-900/70">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
           <Link to="/" className="flex items-center gap-2">
             <span className="rounded bg-primary-600 px-2 py-1 text-xs font-semibold uppercase tracking-wide text-white dark:bg-primary-600 dark:text-slate-950">
@@ -95,6 +96,7 @@ export const Layout = ({ children }) => {
                 About
               </Link>
             )}
+            {user && <NotificationsInbox />}
             <button
               type="button"
               onClick={toggleTheme}

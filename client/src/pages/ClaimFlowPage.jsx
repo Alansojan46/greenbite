@@ -133,7 +133,7 @@ export const ClaimFlowPage = () => {
           </div>
           <div className="space-y-1">
             <label className="text-xs font-medium text-slate-600 dark:text-slate-300" htmlFor="quantity">
-              How much do you need? (people served or kg)
+              How much do you need? (amount / kg / units)
             </label>
             <input
               id="quantity"

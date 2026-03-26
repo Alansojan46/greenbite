@@ -18,6 +18,9 @@ export const RegisterPage = () => {
     phone: "",
     address: ""
   });
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -44,9 +47,14 @@ export const RegisterPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    if (String(form.password || "") !== String(confirmPassword || "")) {
+      setError("Passwords do not match");
+      return;
+    }
     setLoading(true);
     try {
       await register(form);
+      setConfirmPassword("");
     } catch (err) {
       setError(err.response?.data?.message || "Registration failed");
     } finally {
@@ -104,15 +112,53 @@ export const RegisterPage = () => {
             <label className="text-xs font-medium text-slate-600 dark:text-slate-300" htmlFor="password">
               Password
             </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              value={form.password}
-              onChange={handleChange}
-              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-            />
+            <div className="relative">
+              <input
+                id="password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                required
+                value={form.password}
+                onChange={handleChange}
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 pr-16 text-sm text-slate-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label
+              className="text-xs font-medium text-slate-600 dark:text-slate-300"
+              htmlFor="confirmPassword"
+            >
+              Confirm password
+            </label>
+            <div className="relative">
+              <input
+                id="confirmPassword"
+                name="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                required
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 pr-16 text-sm text-slate-900 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800"
+                aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+              >
+                {showConfirmPassword ? "Hide" : "Show"}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -212,4 +258,3 @@ export const RegisterPage = () => {
     </div>
   );
 };
-

@@ -23,7 +23,24 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(morgan("dev"));
+
+const shouldLogHttp = () => {
+  const v = String(process.env.HTTP_LOGS ?? "true").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+};
+
+// Keep dev logs useful: skip frequent polling + cache hits.
+const skipHttpLog = (req, res) => {
+  const path = String(req?.originalUrl || req?.url || "");
+  if (res?.statusCode === 304) return true;
+  if (path.startsWith("/api/notifications")) return true;
+  if (path.startsWith("/api/donations?donor=me")) return true;
+  return false;
+};
+
+if (shouldLogHttp()) {
+  app.use(morgan("dev", { skip: skipHttpLog }));
+}
 
 // Health check
 app.get("/health", (_req, res) => {

@@ -27,6 +27,7 @@ const statusBadgeClass = (status) => {
   if (s === "available") return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200";
   if (s === "claimed") return "bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200";
   if (s === "completed") return "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
+  if (s === "expired") return "bg-rose-100 text-rose-900 dark:bg-rose-950/40 dark:text-rose-200";
   return "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
 };
 
@@ -50,9 +51,6 @@ export const DonationDetailsModal = ({ donation, onClose }) => {
     )}`;
   }, [d]);
 
-  const servingTotal = d?.estimatedPeopleServed ?? null;
-  const servingRemaining =
-    d?.remainingPeopleServed != null ? d.remainingPeopleServed : servingTotal;
   const unitsTotal = d?.quantityUnits ?? null;
   const unitsRemaining = d?.remainingUnits != null ? d.remainingUnits : unitsTotal;
   const kgTotal = d?.quantityKg ?? null;
@@ -167,12 +165,6 @@ export const DonationDetailsModal = ({ donation, onClose }) => {
                   <dd className="font-medium">{formatDateTime(d.expiryEstimate)}</dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-slate-500 dark:text-slate-400">Servings (remaining/total)</dt>
-                  <dd className="font-medium">
-                    {formatNumber(servingRemaining)} / {formatNumber(servingTotal)}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
                   <dt className="text-slate-500 dark:text-slate-400">Units (remaining/total)</dt>
                   <dd className="font-medium">
                     {formatNumber(unitsRemaining)} / {formatNumber(unitsTotal)}
@@ -210,7 +202,7 @@ export const DonationDetailsModal = ({ donation, onClose }) => {
                           : "Unknown";
                       const amount =
                         c?.servings != null
-                          ? `${formatNumber(c.servings)} servings`
+                          ? `${formatNumber(c.servings)} portions`
                           : c?.units != null
                           ? `${formatNumber(c.units)} units`
                           : c?.kg != null

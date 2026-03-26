@@ -54,7 +54,7 @@ export const LandingPage = () => {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/30">
               <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">AI food verification</p>
               <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                Analyze uploaded images to estimate food type, servings, freshness risk, and urgency.
+                Analyze uploaded images to estimate food type, freshness risk, and urgency.
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/30">
@@ -99,7 +99,7 @@ export const LandingPage = () => {
           <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/60">
             <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">2. NGOs claim what they need</p>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-              Claim a specific number of servings, get directions, and coordinate pickup.
+              Claim a specific amount, get directions, and coordinate pickup.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900/60">
@@ -143,4 +143,3 @@ export const LandingPage = () => {
     </div>
   );
 };
-
